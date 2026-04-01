@@ -3,9 +3,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const cron = require("node-cron");
-const pool = require("./db");
 const { Resend } = require("resend");
 const twilio = require("twilio");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 
@@ -14,7 +14,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5500;
 const FRONTEND_URL = String(process.env.FRONTEND_URL || "http://192.168.0.101:5173").trim();
-
 const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
 const fromEmail = String(process.env.FROM_EMAIL || "").trim();
 
@@ -22,15 +21,36 @@ const twilioAccountSid = String(process.env.TWILIO_ACCOUNT_SID || "").trim();
 const twilioAuthToken = String(process.env.TWILIO_AUTH_TOKEN || "").trim();
 const twilioPhone = String(process.env.TWILIO_PHONE || "").trim();
 
+const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
+const supabaseServiceRoleKey = String(
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+).trim();
+
 const resendEnabled = !!resendApiKey && !!fromEmail;
 const smsEnabled =
   twilioAccountSid.startsWith("AC") &&
   !!twilioAuthToken &&
   twilioPhone.startsWith("+");
 
-const resend = resendEnabled ? new Resend(resendApiKey) : null;
-const smsClient = smsEnabled ? twilio(twilioAccountSid, twilioAuthToken) : null;
+const supabaseEnabled = !!supabaseUrl && !!supabaseServiceRoleKey;
 
+const resend = resendEnabled ? new Resend(resendApiKey) : null;
+const smsClient = smsEnabled
+  ? twilio(twilioAccountSid, twilioAuthToken)
+  : null;
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+console.log("SUPABASE_URL:", supabaseUrl ? "loaded" : "missing");
+console.log(
+  "SUPABASE_SERVICE_ROLE_KEY:",
+  supabaseServiceRoleKey ? "loaded" : "missing"
+);
 console.log("RESEND_API_KEY:", resendApiKey ? "loaded" : "missing");
 console.log("FROM_EMAIL:", fromEmail || "missing");
 console.log("TWILIO_ACCOUNT_SID:", twilioAccountSid ? "loaded" : "missing");
@@ -39,12 +59,20 @@ console.log("TWILIO_PHONE:", twilioPhone || "missing");
 console.log("FRONTEND_URL:", FRONTEND_URL || "missing");
 console.log("smsEnabled:", smsEnabled);
 
+if (!supabaseEnabled) {
+  console.log(
+    "Supabase is disabled. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env"
+  );
+}
+
 if (!resendEnabled) {
   console.log("Email is disabled. Check RESEND_API_KEY and FROM_EMAIL in .env");
 }
 
 if (!smsEnabled) {
-  console.log("SMS is disabled. Check TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE in .env");
+  console.log(
+    "SMS is disabled. Check TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE in .env"
+  );
 }
 
 function getSafeFromEmail() {
@@ -69,7 +97,7 @@ function getBirthdayParts(dateValue) {
     const day = String(dateValue.getDate()).padStart(2, "0");
     birthStr = `${year}-${month}-${day}`;
   } else {
-    birthStr = String(dateValue).slice(0, 10);
+    birthStr = String(dateValue || "").slice(0, 10);
   }
 
   const parts = birthStr.split("-");
@@ -101,7 +129,9 @@ function buildEmailHtml(personName, message, frontendUrl) {
 }
 
 function buildSmsText(personName, message, frontendUrl) {
-  return `Happy Birthday ${personName}! ${message || "Happy Birthday!"} Open your page: ${frontendUrl}`;
+  return `Happy Birthday ${personName}! ${
+    message || "Happy Birthday!"
+  } Open your page: ${frontendUrl}`;
 }
 
 async function sendEmail(to, subject, htmlContent) {
@@ -167,15 +197,54 @@ async function sendSMS(phone, message) {
   }
 }
 
+async function fetchAllBirthdays() {
+  const { data, error } = await supabase
+    .from("birthdays")
+    .select("id, name, phone, email, date, timezone, message, last_sent_year, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
+async function fetchBirthdayById(id) {
+  const { data, error } = await supabase
+    .from("birthdays")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  return data;
+}
+
+async function updateLastSentYear(id, year) {
+  const { error } = await supabase
+    .from("birthdays")
+    .update({ last_sent_year: Number(year) })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 app.get("/api/birthdays", async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT id, name, phone, email, date, timezone, message, last_sent_year, created_at
-      FROM birthdays
-      ORDER BY created_at DESC
-    `);
+    if (!supabaseEnabled) {
+      return res.status(500).json({
+        error: "Supabase is not configured"
+      });
+    }
 
-    res.json(Array.isArray(rows) ? rows : []);
+    const rows = await fetchAllBirthdays();
+    res.json(rows);
   } catch (error) {
     console.error("Fetch birthdays error:", error.message);
     res.status(500).json({
@@ -187,29 +256,38 @@ app.get("/api/birthdays", async (req, res) => {
 
 app.post("/api/test-alert/:id", async (req, res) => {
   try {
+    if (!supabaseEnabled) {
+      return res.status(500).json({
+        error: "Supabase is not configured"
+      });
+    }
+
     const id = req.params.id;
+    const person = await fetchBirthdayById(id);
 
-    const [rows] = await pool.query(
-      "SELECT * FROM birthdays WHERE id = ?",
-      [id]
-    );
-
-    if (!rows.length) {
+    if (!person) {
       return res.status(404).json({ error: "Birthday not found" });
     }
 
-    const person = rows[0];
     const frontendUrl = getFrontendLink(person.id);
 
     const emailResult = await sendEmail(
       person.email,
       `Happy Birthday ${person.name}`,
-      buildEmailHtml(person.name, person.message || "Happy Birthday!", frontendUrl)
+      buildEmailHtml(
+        person.name,
+        person.message || "Happy Birthday!",
+        frontendUrl
+      )
     );
 
     const smsResult = await sendSMS(
       person.phone,
-      buildSmsText(person.name, person.message || "Happy Birthday!", frontendUrl)
+      buildSmsText(
+        person.name,
+        person.message || "Happy Birthday!",
+        frontendUrl
+      )
     );
 
     res.json({
@@ -232,6 +310,10 @@ app.post("/api/test-alert/:id", async (req, res) => {
 
 cron.schedule("* * * * *", async () => {
   try {
+    if (!supabaseEnabled) {
+      return;
+    }
+
     const now = new Date();
 
     const indiaDate = new Intl.DateTimeFormat("en-CA", {
@@ -255,16 +337,18 @@ cron.schedule("* * * * *", async () => {
       return;
     }
 
-    console.log(`Cron matched for Asia/Kolkata time ${hour}:${minute} on ${year}-${month}-${day}`);
+    console.log(
+      `Cron matched for Asia/Kolkata time ${hour}:${minute} on ${year}-${month}-${day}`
+    );
 
-    const [rows] = await pool.query("SELECT * FROM birthdays");
+    const rows = await fetchAllBirthdays();
 
     for (const person of rows) {
-      const { month: birthdayMonth, day: birthdayDay, birthStr } = getBirthdayParts(person.date);
+      const { month: birthdayMonth, day: birthdayDay, birthStr } =
+        getBirthdayParts(person.date);
 
       const isBirthday =
-        Number(month) === birthdayMonth &&
-        Number(day) === birthdayDay;
+        Number(month) === birthdayMonth && Number(day) === birthdayDay;
 
       const notSentThisYear =
         Number(person.last_sent_year || 0) !== Number(year);
@@ -294,12 +378,20 @@ cron.schedule("* * * * *", async () => {
       const emailResult = await sendEmail(
         person.email,
         `Happy Birthday ${person.name}`,
-        buildEmailHtml(person.name, person.message || "Happy Birthday!", frontendUrl)
+        buildEmailHtml(
+          person.name,
+          person.message || "Happy Birthday!",
+          frontendUrl
+        )
       );
 
       const smsResult = await sendSMS(
         person.phone,
-        buildSmsText(person.name, person.message || "Happy Birthday!", frontendUrl)
+        buildSmsText(
+          person.name,
+          person.message || "Happy Birthday!",
+          frontendUrl
+        )
       );
 
       console.log(`Birthday alert processed for ${person.name}`, {
@@ -311,10 +403,7 @@ cron.schedule("* * * * *", async () => {
       });
 
       if (emailResult.success || smsResult.success) {
-        await pool.query(
-          "UPDATE birthdays SET last_sent_year = ? WHERE id = ?",
-          [Number(year), person.id]
-        );
+        await updateLastSentYear(person.id, year);
       }
     }
   } catch (error) {
@@ -325,6 +414,7 @@ cron.schedule("* * * * *", async () => {
 app.get("/", (req, res) => {
   res.send("Birthday backend running");
 });
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API = "http://192.168.0.105:5500";
+const API = "http://localhost:5500";
 
 const floatingItems = [
   { id: 1, symbol: "💖", left: "8%", size: 24, delay: "0s", duration: "9s" },
@@ -154,6 +154,17 @@ export default function App() {
           box-sizing: border-box;
         }
 
+        html, body, #root {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          min-height: 100%;
+        }
+
+        body {
+          overflow-x: hidden;
+        }
+
         @keyframes floatUp {
           0% {
             transform: translateY(40px) scale(0.8) rotate(0deg);
@@ -255,10 +266,113 @@ export default function App() {
           cursor: not-allowed;
         }
 
+        @media (max-width: 768px) {
+          .birthday-card {
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 16px !important;
+            border-radius: 20px !important;
+            margin: 0 !important;
+          }
+
+          .birthday-title {
+            font-size: 24px !important;
+            line-height: 1.3 !important;
+          }
+        }
+
         @media (max-width: 640px) {
           .birthday-card {
             padding: 14px !important;
-            border-radius: 20px !important;
+            border-radius: 18px !important;
+          }
+
+          .birthday-title {
+            font-size: 22px !important;
+          }
+
+          .floating-item {
+            opacity: 0.8;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .birthday-card {
+            padding: 12px !important;
+            border-radius: 16px !important;
+          }
+
+          .birthday-title {
+            font-size: 20px !important;
+            margin-bottom: 4px !important;
+          }
+
+          .birthday-info-block {
+            padding: 12px !important;
+            font-size: 13px !important;
+            gap: 7px !important;
+          }
+
+          .birthday-select {
+            padding: 11px 12px !important;
+            font-size: 14px !important;
+            border-radius: 12px !important;
+          }
+
+          .birthday-label {
+            font-size: 12px !important;
+          }
+
+          .birthday-actions {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 10px !important;
+          }
+
+          .birthday-actions button {
+            width: 100% !important;
+            font-size: 14px !important;
+            padding: 12px 14px !important;
+          }
+
+          .birthday-status {
+            font-size: 12px !important;
+            line-height: 1.5 !important;
+          }
+
+          .birthday-result {
+            font-size: 12px !important;
+            padding: 10px 12px !important;
+            line-height: 1.5 !important;
+          }
+
+          .message-box {
+            margin-top: 4px !important;
+            font-size: 13px !important;
+            line-height: 1.6 !important;
+          }
+
+          .sparkle-dot:nth-child(n+1) {
+            opacity: 0.75;
+          }
+        }
+
+        @media (max-width: 360px) {
+          .birthday-card {
+            padding: 10px !important;
+          }
+
+          .birthday-title {
+            font-size: 18px !important;
+          }
+
+          .birthday-info-block {
+            font-size: 12px !important;
+          }
+
+          .birthday-actions button {
+            font-size: 13px !important;
+            padding: 11px 12px !important;
           }
         }
       `}</style>
@@ -295,11 +409,12 @@ export default function App() {
           </h1>
 
           <div style={styles.row}>
-            <label style={styles.label}>Person</label>
+            <label style={styles.label} className="birthday-label">Person</label>
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
               style={styles.select}
+              className="birthday-select"
               disabled={!birthdays.length || status === "sending"}
             >
               {birthdays.length === 0 ? (
@@ -314,7 +429,7 @@ export default function App() {
             </select>
           </div>
 
-          <div style={styles.info}>
+          <div style={styles.info} className="birthday-info-block">
             <div><b>Name:</b> {current?.name || "-"}</div>
             <div><b>Phone:</b> {current?.phone || "-"}</div>
             <div><b>Email:</b> {current?.email || "-"}</div>
@@ -322,11 +437,11 @@ export default function App() {
             <div><b>Timezone:</b> {current?.timezone || "-"}</div>
             <div>
               <b>Message:</b>
-              <div style={styles.messageText}>{current?.message || "-"}</div>
+              <div style={styles.messageText} className="message-box">{current?.message || "-"}</div>
             </div>
           </div>
 
-          <div style={styles.actions}>
+          <div style={styles.actions} className="birthday-actions">
             <button
               style={styles.primary}
               className="test-btn"
@@ -345,11 +460,11 @@ export default function App() {
             </button>
           </div>
 
-          <div style={styles.status}>
+          <div style={styles.status} className="birthday-status">
             {status === "idle" && "Loading..."}
             {status === "loading" && "Loading data..."}
             {status === "loaded" && "Data loaded successfully."}
-            {status === "backend-error" && "Backend error. Check Node server and MySQL."}
+            {status === "backend-error" && "Backend error. Check Node server and backend API."}
             {status === "sending" && "Sending test alert..."}
             {status === "both-sent" && "Test email and SMS sent successfully."}
             {status === "email-only" && "Test email sent, but SMS failed."}
@@ -358,7 +473,7 @@ export default function App() {
             {status === "test-error" && "Test alert failed. Check backend terminal."}
           </div>
 
-          {resultText ? <div style={styles.resultBox}>{resultText}</div> : null}
+          {resultText ? <div style={styles.resultBox} className="birthday-result">{resultText}</div> : null}
         </div>
       </div>
     </>
@@ -374,7 +489,7 @@ const styles = {
     alignItems: "center",
     background:
       "radial-gradient(1000px 600px at 10% 10%, rgba(244, 44, 111, 0.94) 0%, transparent 60%), radial-gradient(900px 700px at 90% 15%, rgba(61, 6, 133, 0.82) 0%, transparent 60%), linear-gradient(180deg, #fff0f8 0%, #f7e8ff 55%, #fff8fb 100%)",
-    padding: "12px",
+    padding: "16px",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     position: "relative",
     overflow: "hidden"
@@ -471,7 +586,8 @@ const styles = {
     color: "#5E357A",
     minHeight: 20,
     textAlign: "center",
-    fontWeight: 600
+    fontWeight: 600,
+    lineHeight: 1.5
   },
   resultBox: {
     marginTop: 12,
