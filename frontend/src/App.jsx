@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API = "http://localhost:5500";
+const API = "https://vishnupriya.onrender.com";
 
 const floatingItems = [
   { id: 1, symbol: "💖", left: "8%", size: 24, delay: "0s", duration: "9s" },
