@@ -333,7 +333,7 @@ cron.schedule("* * * * *", async () => {
     const [year, month, day] = indiaDate.split("-");
     const [hour, minute] = indiaTime.split(":");
 
-    if (!(Number(hour) === 0 && Number(minute) === 0)) {
+    if (!(Number(hour) === 11 && Number(minute) === 25)) {
       return;
     }
 
